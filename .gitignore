@@ -1,0 +1,8 @@
+# Installed packages — anyone can recreate these with `npm install`
+node_modules/
+
+# Live order data — not code, shouldn't be shared
+orders.json
+
+# Mac system files
+.DS_Store

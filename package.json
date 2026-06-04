@@ -1,0 +1,12 @@
+{
+  "name": "delivery-app",
+  "version": "1.0.0",
+  "description": "Dead-simple delivery board: add orders, anyone can deliver them.",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2"
+  }
+}
