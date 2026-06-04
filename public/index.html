@@ -57,21 +57,114 @@
     .delivered  { background: #d4edda; color: #155724; }
     .deliver-btn   { background: #007bff; color: white; }
     .delivered-btn { background: #28a745; color: white; }
+
+    /* Address autocomplete */
+    .field { position: relative; }
+    .suggestions {
+      position: absolute;
+      left: 0; right: 0;
+      top: 100%;
+      margin-top: -2px;
+      background: white;
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      box-shadow: 0 4px 14px rgba(0,0,0,0.12);
+      list-style: none;
+      padding: 0;
+      max-height: 220px;
+      overflow-y: auto;
+      z-index: 10;
+    }
+    .suggestions:empty { display: none; }
+    .suggestions li {
+      padding: 10px 12px;
+      font-size: 14px;
+      cursor: pointer;
+      border-bottom: 1px solid #f0f0f0;
+    }
+    .suggestions li:last-child { border-bottom: none; }
+    .suggestions li:hover, .suggestions li.active { background: #f0f7ff; }
+    .pin-ok { color: #1f7a4d; font-size: 12px; margin: 2px 0 0; }
+    .geo { color: #888; font-size: 12px; }
+    .geo a { color: #007bff; text-decoration: none; }
   </style>
 </head>
 <body>
   <h1>📦 Deliveries</h1>
 
   <form id="addForm">
-    <input id="what"    placeholder="What to deliver (e.g. Pizza)" required />
-    <input id="pickup"  placeholder="Pickup address" />
-    <input id="dropoff" placeholder="Dropoff address" />
+    <input id="what" placeholder="What to deliver (e.g. Pizza)" required />
+
+    <div class="field">
+      <input id="pickup" placeholder="Pickup address" autocomplete="off" />
+      <ul class="suggestions" id="pickup-suggestions"></ul>
+    </div>
+    <p class="pin-ok" id="pickup-ok"></p>
+
+    <div class="field">
+      <input id="dropoff" placeholder="Dropoff address" autocomplete="off" />
+      <ul class="suggestions" id="dropoff-suggestions"></ul>
+    </div>
+    <p class="pin-ok" id="dropoff-ok"></p>
+
     <button class="add-btn" type="submit">+ Add order</button>
   </form>
 
   <div id="list"></div>
 
   <script>
+    // ---- Address autocomplete (geocoding) ----
+    // For each address field we remember the coordinates of the chosen match.
+    const coords = { pickup: null, dropoff: null };
+
+    // Wire one input up to live address suggestions from /geocode.
+    function setupAutocomplete(name) {
+      const input = document.getElementById(name);
+      const list = document.getElementById(name + "-suggestions");
+      const ok = document.getElementById(name + "-ok");
+      let timer;
+
+      function clearMatch() {
+        coords[name] = null;
+        ok.textContent = "";
+      }
+
+      input.addEventListener("input", () => {
+        clearMatch();                 // typing again invalidates the old pin
+        clearTimeout(timer);
+        const q = input.value.trim();
+        if (q.length < 3) { list.innerHTML = ""; return; }
+
+        // Debounce so we don't hit the geocoder on every keystroke.
+        timer = setTimeout(async () => {
+          const places = await fetch("/geocode?q=" + encodeURIComponent(q))
+            .then((r) => r.json())
+            .catch(() => []);
+
+          list.innerHTML = places.map((p, i) =>
+            `<li data-i="${i}">${p.label}</li>`
+          ).join("");
+
+          list.querySelectorAll("li").forEach((li, i) => {
+            li.addEventListener("click", () => {
+              const place = places[i];
+              input.value = place.label;          // canonical, identified address
+              coords[name] = { lat: place.lat, lon: place.lon };
+              ok.textContent = `📍 Pinned (${place.lat.toFixed(4)}, ${place.lon.toFixed(4)})`;
+              list.innerHTML = "";
+            });
+          });
+        }, 350);
+      });
+
+      // Hide the dropdown when clicking away.
+      document.addEventListener("click", (e) => {
+        if (!input.contains(e.target) && !list.contains(e.target)) list.innerHTML = "";
+      });
+    }
+    setupAutocomplete("pickup");
+    setupAutocomplete("dropoff");
+
     // Load all orders and draw them on the page
     async function load() {
       const orders = await fetch("/orders").then((r) => r.json());
@@ -84,6 +177,9 @@
           <span class="status ${o.status}">${o.status}</span>
           <div><strong>${o.what}</strong></div>
           <div class="route">${o.pickup || "?"} → ${o.dropoff || "?"}</div>
+          ${o.pickupCoords && o.dropoffCoords
+            ? `<div class="geo"><a href="https://www.google.com/maps/dir/${o.pickupCoords.lat},${o.pickupCoords.lon}/${o.dropoffCoords.lat},${o.dropoffCoords.lon}" target="_blank">🗺️ View route on map</a></div>`
+            : ""}
           ${o.status === "waiting"
             ? `<button class="deliver-btn" onclick="setStatus(${o.id}, 'delivering')">I'll deliver this</button>`
             : ""}
@@ -104,9 +200,14 @@
           what: document.getElementById("what").value,
           pickup: document.getElementById("pickup").value,
           dropoff: document.getElementById("dropoff").value,
+          pickupCoords: coords.pickup,
+          dropoffCoords: coords.dropoff,
         }),
       });
       e.target.reset();
+      coords.pickup = coords.dropoff = null;
+      document.getElementById("pickup-ok").textContent = "";
+      document.getElementById("dropoff-ok").textContent = "";
       load();
     });
 
