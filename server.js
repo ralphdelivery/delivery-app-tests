@@ -42,10 +42,14 @@ app.get("/geocode", async (req, res) => {
   if (q.length < 3) return res.json([]); // too short to be a useful search
 
   try {
+    // Keep every suggestion inside New York City. `viewbox` is the NYC
+    // bounding box (all five boroughs) and `bounded=1` restricts results to it.
+    const NYC_VIEWBOX = "-74.2591,40.9176,-73.7004,40.4774"; // left,top,right,bottom
     const url =
       "https://nominatim.openstreetmap.org/search?format=jsonv2" +
-      "&addressdetails=1&limit=5&countrycodes=us&q=" +
-      encodeURIComponent(q);
+      "&addressdetails=1&limit=10&countrycodes=us" + // over-fetch; we filter to NY below
+      "&viewbox=" + NYC_VIEWBOX + "&bounded=1" +
+      "&q=" + encodeURIComponent(q);
 
     const r = await fetch(url, {
       headers: {
@@ -55,13 +59,17 @@ app.get("/geocode", async (req, res) => {
     });
     const places = await r.json();
 
-    // Hand the browser only what it needs: a label + coordinates.
+    // The NYC viewbox slightly overlaps New Jersey, so drop anything that
+    // isn't actually in New York State. Hand the browser only what it needs.
     res.json(
-      places.map((p) => ({
-        label: p.display_name,
-        lat: Number(p.lat),
-        lon: Number(p.lon),
-      }))
+      places
+        .filter((p) => p.address && p.address.state === "New York")
+        .slice(0, 5)
+        .map((p) => ({
+          label: p.display_name,
+          lat: Number(p.lat),
+          lon: Number(p.lon),
+        }))
     );
   } catch (err) {
     console.error("Geocode failed:", err);
